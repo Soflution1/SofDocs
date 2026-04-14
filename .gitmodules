@@ -1,0 +1,15 @@
+[submodule "crates/core"]
+	path = crates/core
+	url = git@github.com:Soflution1/sofdocs-core.git
+[submodule "crates/wasm"]
+	path = crates/wasm
+	url = git@github.com:Soflution1/sofdocs-wasm.git
+[submodule "crates/server"]
+	path = crates/server
+	url = git@github.com:Soflution1/sofdocs-server.git
+[submodule "apps/web"]
+	path = apps/web
+	url = git@github.com:Soflution1/sofdocs-web.git
+[submodule "apps/desktop"]
+	path = apps/desktop
+	url = git@github.com:Soflution1/sofdocs-desktop.git

@@ -332,3 +332,109 @@ Do NOT copy code from these repos. Write everything from scratch in Rust + Svelt
 - Mobile apps are Phase 5 (future), do not build for mobile now
 - Focus on QUALITY over QUANTITY: a perfect document editor is worth more than a mediocre suite with all 4 editors
 - Start with the document editor (Word equivalent), then spreadsheet, then presentation, then PDF
+
+
+## AI / LLM INTEGRATION
+
+### Layer 1: In-Document AI Assistant (User-Facing)
+
+An AI assistant is embedded directly in each editor, accessible via:
+- Right-click context menu on selected text/cells/slides
+- Floating AI toolbar (cmd+J or /)
+- Sidebar AI chat panel for complex requests
+
+**Document Editor AI features:**
+- Rewrite (change tone: formal, casual, technical, creative)
+- Summarize (selection or full document)
+- Translate (any language pair, powered by LLM)
+- Expand / Shorten text
+- Grammar and style correction (beyond basic spellcheck)
+- Generate content from a brief
+- Extract action items, key points, TODOs from meeting notes
+- Smart templates: generate contracts, reports, emails from prompts
+
+**Spreadsheet AI features:**
+- Generate formulas from natural language
+- Explain existing formulas in plain language
+- Auto-detect and suggest data cleaning
+- Generate charts and pivot tables from natural language
+- SQL-like queries on spreadsheet data in natural language
+
+**Presentation AI features:**
+- Generate slide deck from a text brief or document
+- Suggest layouts and design improvements
+- Auto-summarize and generate speaker notes
+
+**PDF AI features:**
+- Summarize PDF content
+- Extract structured data (tables, forms, key-value pairs)
+- Q&A over PDF content ("What is the total amount on this invoice?")
+- OCR + AI for scanned documents
+
+**Technical implementation:**
+- LLM calls go through the Axum server (sofdocs-server)
+- Server proxies to configurable LLM backends:
+  - Anthropic Claude API (default SaaS offering)
+  - OpenAI-compatible API (any provider)
+  - Ollama / local models (self-hosted, privacy-first)
+  - AURA network (Soflution's own decentralized LLM, when ready)
+- Users can bring their own API key or use Soflution's bundled credits
+- Streaming responses via SSE for real-time text generation
+- Context window management: only send relevant sections, not full documents
+- Rate limiting per user/org to control costs
+
+### Layer 2: Self-Improving Product Intelligence (Backend)
+
+Anonymous telemetry to continuously improve the product. No document content collected.
+
+**What is collected (anonymous, opt-in):**
+- Format statistics: which file types are opened most
+- Performance metrics: time to open, render, memory usage per doc type
+- Feature usage heatmap: toolbar clicks, AI feature usage, shortcuts
+- Error events: parsing failures, rendering glitches, conversion errors
+- AI acceptance rate: did the user keep or discard the AI suggestion?
+
+**Feedback loop:**
+1. User uses AI feature (e.g., "rewrite formal")
+2. LLM generates suggestion
+3. User accepts, edits, or rejects
+4. Accept/reject signal logged (NOT the content)
+5. Aggregated signals improve prompts and model selection
+6. Better prompts deployed via server config update
+7. Cycle repeats automatically
+
+**Privacy:**
+- ALL telemetry is opt-in
+- Zero document content leaves the user's environment
+- Only behavioral metadata (counts, timings, feature IDs)
+- Self-hosted customers can disable ALL telemetry
+- GDPR compliant, no PII, anonymized user IDs
+
+**Tech stack:**
+- Telemetry batched client-side, sent every 60s
+- Axum server writes to ClickHouse or TimescaleDB
+- Nightly Rust batch job processes analytics
+- Grafana or custom Svelte dashboard for product metrics
+
+### Layer 3: Per-Organization Learning (Enterprise)
+
+For enterprise/self-hosted customers, the AI adapts to their organization:
+- Custom vocabulary: learns company terms, acronyms, product names
+- Style guide enforcement: suggests corrections based on org writing style
+- Template intelligence: learns from existing docs to improve templates
+- Formula library: learns common spreadsheet patterns
+- Smart autocomplete: predicts based on org corpus (local model only)
+
+Runs ENTIRELY on customer infrastructure (self-hosted Ollama).
+No org data leaves their servers. Soflution provides the framework.
+
+### Layer 4: AURA Integration (Future)
+
+When the AURA project (Soflution's decentralized self-improving LLM) is ready:
+- SofDocs becomes a first-class AURA client
+- Users can opt-in to contribute anonymized LoRA gradients
+- The AURA model improves from collective SofDocs usage
+- Each user gets a better AI assistant without sharing their content
+- Federated learning via Flower/FedProx, aggregated in Rust
+- New model versions published on IPFS, pulled automatically
+- This is the long-term vision: every SofDocs user makes the AI smarter for everyone
