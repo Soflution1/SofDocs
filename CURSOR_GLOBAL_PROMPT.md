@@ -35,20 +35,22 @@ You are building **SofDocs**, a full office suite (documents, spreadsheets, pres
   - `zip` for OOXML container handling (.docx/.xlsx/.pptx are ZIP archives)
   - `wasm-bindgen` + `js-sys` + `web-sys` for browser interop
   - `serde` + `serde_json` for serialization
+  - `cosmic-text` for text shaping (HarfRust), layout (line breaking, bidi, wrapping), and rendering (swash)
+  - `glyphon` for GPU-accelerated text rendering via wgpu (uses cosmic-text internally)
   - `tiny-skia` for 2D software rendering (CPU baseline)
-  - `wgpu` for GPU-accelerated rendering when WebGPU is available
-  - `lopdf` or custom PDF engine for PDF read/write
-  - `icu4x` for internationalization and text shaping
-  - `rustybuzz` for text shaping (HarfBuzz port)
-  - `ttf-parser` + `ab_glyph` for font handling
+  - `wgpu` for GPU-accelerated rendering when WebGPU is available (Vulkan/Metal/D3D12/WebGPU)
+  - `lopdf` for PDF read/write
+  - `icu4x` for internationalization
+  - `yrs` for real-time collaboration CRDT (Rust port of Yjs, offline-first, peer-to-peer capable)
   - `image` crate for image processing (embedded images in docs)
   - `comemo` for incremental computation / memoization
 - Svelte communicates with WASM via typed bindings (wasm-bindgen)
 - The canvas HTML element is owned by Svelte, pixel rendering is done by WASM
 
-### Server: Axum (Rust)
-- Axum web framework for HTTP API and WebSocket
-- Real-time collaboration via WebSocket (OT or CRDT-based)
+### Server: Actix-web (Rust)
+- Actix-web framework for HTTP API and WebSocket (#1 in 15/22 HttpArena benchmarks, 23M req/s pipelined)
+- Thread-per-core actor model for deterministic P99 latency under load
+- Real-time collaboration via WebSocket (CRDT-based, using Yrs)
 - File conversion service (calls the same Rust engine, no separate process)
 - Authentication via Better Auth (not Supabase Auth)
 - Database: Supabase (PostgreSQL) for user data, document metadata
@@ -77,108 +79,145 @@ You are building **SofDocs**, a full office suite (documents, spreadsheets, pres
 
 ## PROJECT STRUCTURE
 
+Multi-repo architecture with Git submodules. Each component is an independent repo under `github.com/Soflution1/`.
+
+### Repositories
+
+| Repo | Submodule path | Description |
+|---|---|---|
+| `SofDocs` (parent) | -- | Orchestrator repo, contains `.gitmodules` and `CURSOR_GLOBAL_PROMPT.md` |
+| `sofdocs-core` | `crates/core/` | Core engine: document parsing, rendering, conversion. Pure Rust. |
+| `sofdocs-wasm` | `crates/wasm/` | WASM bindings: bridge between Rust engine and browser/Svelte. |
+| `sofdocs-server` | `crates/server/` | Actix-web API: real-time collaboration, file conversion, auth. |
+| `sofdocs-web` | `apps/web/` | SvelteKit + Svelte 5 + Tailwind CSS 4 frontend. |
+| `sofdocs-desktop` | `apps/desktop/` | Tauri v2 desktop wrapper (macOS, Windows, Linux). |
+
+### File structure per repo
+
+**sofdocs-core** (`crates/core/`):
 ```
-SofDocs/
-  apps/
-    web/                    # SvelteKit app (SaaS frontend)
-      src/
-        lib/
-          components/       # Svelte 5 UI components
-            toolbar/        # Document toolbar, ribbon
-            sidebar/        # Side panels (styles, properties)
-            editor/         # Editor canvas wrapper
-            sheets/         # Spreadsheet grid UI
-            slides/         # Presentation slide UI
-            pdf/            # PDF viewer UI
-          stores/           # Svelte stores for app state
-          wasm/             # WASM bindings and loader
-        routes/             # SvelteKit routes
-          /                 # Landing page
-          /app/             # Main editor app
-          /app/document/    # Document editor
-          /app/spreadsheet/ # Spreadsheet editor
-          /app/presentation/# Presentation editor
-          /app/pdf/         # PDF viewer/editor
-      static/
-      svelte.config.js
-      tailwind.config.ts
-      vite.config.ts
-    desktop/                # Tauri v2 app
-      src-tauri/
-        src/
-          main.rs           # Tauri entry point
-          commands.rs       # Tauri commands (file I/O, native dialogs)
-          menu.rs           # Native menu bar
-        tauri.conf.json
-        Cargo.toml
-  crates/
-    sofdocs-core/           # Core engine (Rust, compiles to WASM + native)
-      src/
-        lib.rs
-        document/           # DOCX parser/renderer
-          parser.rs         # OOXML document parsing
-          renderer.rs       # Document layout and rendering
-          model.rs          # Document object model
-        spreadsheet/        # XLSX parser/renderer
-          parser.rs
-          renderer.rs
-          model.rs
-          formulas.rs       # Formula engine (SUM, VLOOKUP, etc.)
-        presentation/       # PPTX parser/renderer
-          parser.rs
-          renderer.rs
-          model.rs
-        pdf/                # PDF engine
-          parser.rs
-          renderer.rs
-          forms.rs
-        converter/          # Format conversion
-          mod.rs
-          docx_to_pdf.rs
-          xlsx_to_csv.rs
-          odt_to_docx.rs
-        canvas/             # Canvas rendering abstraction
-          mod.rs
-          cpu.rs            # tiny-skia CPU renderer
-          gpu.rs            # wgpu GPU renderer
-        text/               # Text layout engine
-          shaping.rs        # Text shaping (rustybuzz)
-          layout.rs         # Line breaking, paragraph layout
-          fonts.rs          # Font loading and management
-        collab/             # Collaboration primitives
-          crdt.rs           # CRDT for real-time sync
-          operations.rs     # Operational transforms
-      Cargo.toml
-    sofdocs-wasm/           # WASM bindings (thin wrapper around core)
-      src/
-        lib.rs              # wasm-bindgen exports
-      Cargo.toml
-    sofdocs-server/         # Axum server
-      src/
-        main.rs
-        routes/
-          documents.rs      # Document CRUD API
-          convert.rs        # File conversion API
-          collab.rs         # WebSocket collaboration
-          auth.rs           # Authentication routes
-        middleware/
-        config.rs
-      Cargo.toml
-  Cargo.toml                # Workspace root
-  package.json              # Frontend dependencies
-  README.md
+src/
+  lib.rs
+  document/               # DOCX parser/renderer
+    parser.rs             # OOXML document parsing
+    renderer.rs           # Document layout and rendering
+    model.rs              # Document object model
+  spreadsheet/            # XLSX parser/renderer
+    parser.rs
+    renderer.rs
+    model.rs
+    formulas.rs           # Formula engine (SUM, VLOOKUP, etc.)
+  presentation/           # PPTX parser/renderer
+    parser.rs
+    renderer.rs
+    model.rs
+  pdf/                    # PDF engine
+    parser.rs
+    renderer.rs
+    forms.rs
+  converter/              # Format conversion
+    mod.rs
+    docx_to_pdf.rs
+    xlsx_to_csv.rs
+    odt_to_docx.rs
+  canvas/                 # Canvas rendering abstraction
+    mod.rs
+    cpu.rs                # tiny-skia CPU renderer
+    gpu.rs                # wgpu GPU renderer
+  text/                   # Text engine (cosmic-text + glyphon)
+    shaping.rs            # Text shaping via cosmic-text (HarfRust)
+    layout.rs             # Line breaking, paragraph layout, bidi
+    fonts.rs              # Font loading (fontdb) and management
+    gpu_text.rs           # GPU text rendering via glyphon
+  collab/                 # Collaboration (CRDT)
+    crdt.rs               # Yrs (Rust port of Yjs) integration
+    sync.rs               # Sync protocol, state vectors, updates
+Cargo.toml
+```
+
+**sofdocs-wasm** (`crates/wasm/`):
+```
+src/
+  lib.rs                  # wasm-bindgen exports
+Cargo.toml
+```
+
+**sofdocs-server** (`crates/server/`):
+```
+src/
+  main.rs
+  routes/
+    documents.rs          # Document CRUD API
+    convert.rs            # File conversion API
+    collab.rs             # WebSocket collaboration (Yrs sync)
+    auth.rs               # Authentication routes
+  middleware/
+  config.rs
+Cargo.toml
+```
+
+**sofdocs-web** (`apps/web/`):
+```
+src/
+  lib/
+    components/           # Svelte 5 UI components
+      toolbar/            # Document toolbar, ribbon
+      sidebar/            # Side panels (styles, properties)
+      editor/             # Editor canvas wrapper
+      sheets/             # Spreadsheet grid UI
+      slides/             # Presentation slide UI
+      pdf/                # PDF viewer UI
+    stores/               # Svelte stores (.svelte.ts)
+    wasm/                 # WASM bindings and loader
+  routes/
+    /                     # Landing page
+    /app/                 # Main editor app
+    /app/document/        # Document editor
+    /app/spreadsheet/     # Spreadsheet editor
+    /app/presentation/    # Presentation editor
+    /app/pdf/             # PDF viewer/editor
+static/
+svelte.config.js
+tailwind.config.ts
+vite.config.ts
+package.json
+```
+
+**sofdocs-desktop** (`apps/desktop/`):
+```
+src-tauri/
+  src/
+    main.rs               # Tauri entry point
+    commands.rs           # Tauri commands (file I/O, native dialogs)
+    menu.rs               # Native menu bar
+  tauri.conf.json
+  Cargo.toml
+```
+
+### Working with submodules
+
+```bash
+# Clone with all submodules
+git clone --recurse-submodules git@github.com:Soflution1/SofDocs.git
+
+# Update all submodules to latest
+git submodule update --remote --merge
+
+# Work in a specific repo
+cd crates/core && git checkout -b feature/docx-parser
 ```
 
 ## PHASE 1: MVP (Start Here)
 
 Build a minimal but functional document editor as proof of concept.
 
-### Step 1: Rust Workspace Setup
-1. Initialize Cargo workspace at project root
-2. Create crates: sofdocs-core, sofdocs-wasm, sofdocs-server
-3. Configure wasm-pack for sofdocs-wasm
-4. Add all Rust dependencies listed above
-5. Verify `cargo build` and `wasm-pack build` work
+### Step 1: Rust Crate Setup
+1. Initialize each crate repo (sofdocs-core, sofdocs-wasm, sofdocs-server) with `cargo init --lib`
+2. Configure sofdocs-core as a library with feature flags (`wasm`, `native`, `server`)
+3. Configure wasm-pack for sofdocs-wasm (depends on sofdocs-core with `wasm` feature)
+4. Add all Rust dependencies listed above to respective Cargo.toml files
+5. Verify `cargo build` in each crate and `wasm-pack build` in sofdocs-wasm
+6. Ensure the parent SofDocs repo submodules point to the correct commits
 
 ### Step 2: DOCX Parser (Rust)
 1. Parse .docx files (they are ZIP archives containing XML)
@@ -191,10 +230,10 @@ Build a minimal but functional document editor as proof of concept.
 
 ### Step 3: Document Renderer (Rust/WASM)
 1. Take the parsed document model and render to HTML5 Canvas
-2. Implement text layout: line breaking, word wrap, paragraph spacing
+2. Implement text layout using cosmic-text: line breaking, word wrap, paragraph spacing, bidi
 3. Implement pagination (page breaks, headers, footers)
-4. Use rustybuzz for text shaping, ttf-parser for fonts
-5. Use tiny-skia for CPU rendering to canvas
+4. Use cosmic-text for text shaping (HarfRust) and layout, fontdb for font loading
+5. Use tiny-skia for CPU rendering to canvas (GPU via wgpu + glyphon when WebGPU available)
 6. Export the renderer via wasm-bindgen so Svelte can call it
 
 ### Step 4: SvelteKit Frontend
@@ -208,11 +247,11 @@ Build a minimal but functional document editor as proof of concept.
 5. Editing: user clicks on text, types, WASM updates the model and re-renders
 6. Export: download as .docx (WASM serializes the model back to OOXML)
 
-### Step 5: Axum Server
-1. Basic Axum server with health check
+### Step 5: Actix-web Server
+1. Basic Actix-web server with health check
 2. File upload endpoint (accepts .docx, stores in Supabase Storage)
 3. Document list endpoint (fetch user's documents from Supabase)
-4. WebSocket stub for future collaboration
+4. WebSocket endpoint for CRDT collaboration (Yrs sync protocol)
 5. Auth via Better Auth
 
 ### Step 6: Tauri Desktop
@@ -237,7 +276,7 @@ Build a minimal but functional document editor as proof of concept.
 - Use feature flags to compile different targets:
   - `wasm` feature: WASM-specific code (web-sys, wasm-bindgen)
   - `native` feature: native-specific code (file I/O, Tauri commands)
-  - `server` feature: server-specific code (Axum, database)
+  - `server` feature: server-specific code (Actix-web, database)
 
 ### Svelte Rules
 - Svelte 5 runes syntax ONLY: $state(), $derived(), $effect()
@@ -254,7 +293,7 @@ Build a minimal but functional document editor as proof of concept.
 - ALL document operations go through the WASM engine
 - The WASM engine is the single source of truth for document state
 - Svelte only handles: user input events, UI state, calling WASM, rendering canvas
-- The Axum server NEVER processes document content directly
+- The Actix-web server NEVER processes document content directly
 - Server only handles: auth, file storage, collaboration relay, metadata
 - Tauri only handles: native OS features (file dialogs, menus, system tray)
 - ALL business logic lives in sofdocs-core (shared between WASM, server, desktop)
@@ -307,7 +346,7 @@ Build a minimal but functional document editor as proof of concept.
 
 ## REFERENCE MATERIAL
 
-The OnlyOffice forks are available at:
+### OnlyOffice forks (read-only, architecture reference)
 - ../OnlyOffice-core/ (C++ core, format parsers, converters)
 - ../OnlyOffice-sdkjs/ (JS editor engines: word/, cell/, slide/, pdf/)
 - ../OnlyOffice-web-apps/ (React frontend)
@@ -315,10 +354,17 @@ The OnlyOffice forks are available at:
 - ../OnlyOffice-desktop-sdk/ (Desktop SDK)
 - ../OnlyOffice-DesktopEditors/ (Desktop app)
 
+### Rudra-Editor (Rust reference, architecture comparison)
+- https://github.com/Rudra-Office/Rudra-Editor
+- Pure Rust office engine (DOCX, ODT, PDF, XLSX, ODS, CSV)
+- Uses Fugue CRDT for collaboration, page layout engine, WASM/npm
+- 1,390+ tests, zero C/C++ deps
+- Useful to compare: crate structure, OOXML parsing approach, CRDT integration, canvas rendering
+
 Use these ONLY to understand:
 - How OOXML formats are structured
 - How document rendering works (pagination, text layout, cell grid)
-- How collaboration synchronization works
+- How collaboration synchronization works (CRDT patterns in Rust)
 - How format conversion pipelines are built
 
 Do NOT copy code from these repos. Write everything from scratch in Rust + Svelte.
@@ -372,7 +418,7 @@ An AI assistant is embedded directly in each editor, accessible via:
 - OCR + AI for scanned documents
 
 **Technical implementation:**
-- LLM calls go through the Axum server (sofdocs-server)
+- LLM calls go through the Actix-web server (sofdocs-server)
 - Server proxies to configurable LLM backends:
   - Anthropic Claude API (default SaaS offering)
   - OpenAI-compatible API (any provider)
@@ -412,7 +458,7 @@ Anonymous telemetry to continuously improve the product. No document content col
 
 **Tech stack:**
 - Telemetry batched client-side, sent every 60s
-- Axum server writes to ClickHouse or TimescaleDB
+- Actix-web server writes to ClickHouse or TimescaleDB
 - Nightly Rust batch job processes analytics
 - Grafana or custom Svelte dashboard for product metrics
 
