@@ -12,4 +12,4 @@
 	url = git@github.com:Soflution1/sofdocs-web.git
 [submodule "apps/desktop"]
 	path = apps/desktop
-	url = git@github.com:Soflution1/sofdocs-desktop.git
+	url = https://github.com/Soflution1/sofdocs-desktop.git
