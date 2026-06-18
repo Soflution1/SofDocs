@@ -26,12 +26,11 @@ leave your machine.
 Most PDF editors are either heavyweight cloud suites that upload your documents,
 or slow Electron apps wrapping a JavaScript renderer. Slate is different:
 
-- **Native & fast.** A Rust core driving [PDFium](https://pdfium.googlesource.com/pdfium/)
-  and [`lopdf`](https://github.com/J-F-Liu/lopdf), wrapped in a thin
-  [Tauri v2](https://v2.tauri.app/) shell. CPU-bound work is parallelized with
-  [Rayon](https://github.com/rayon-rs/rayon).
+- **Native & fast.** A homemade Rust PDF engine wrapped in a thin
+  [Tauri v2](https://v2.tauri.app/) shell. Rendering and CPU-bound work are
+  multi-threaded, so pages load instantly even on large documents.
 - **Private by design.** Everything runs locally. No account, no server round
-  trips, no analytics. OCR uses Apple Vision on macOS (Tesseract fallback).
+  trips, no analytics. On-device OCR (Apple Vision on macOS).
 - **Genuinely free.** Licensed under the **GNU AGPL-3.0** — free to use, study,
   modify and share, and it stays that way.
 - **Polished.** A clean, Apple/Acrobat-grade interface focused on the document,
@@ -90,7 +89,7 @@ or slow Electron apps wrapping a JavaScript renderer. Slate is different:
 - Prepare new form fields
 
 ### Tools
-- **OCR:** add a searchable text layer (Apple Vision on macOS, Tesseract fallback)
+- **OCR:** add a searchable text layer (on-device, Apple Vision on macOS)
 - **Compress** to shrink file size while preserving quality
 - **Convert** between formats
 - **Redact** sensitive content
@@ -129,11 +128,11 @@ flowchart TD
         E6[pdf_tools · OCR · convert]
     end
 
-    subgraph NATIVE["Native libraries"]
-        P[PDFium]
-        L[lopdf]
-        R[Rayon · parallelism]
-        O[Apple Vision / Tesseract · OCR]
+    subgraph RUNTIME["Slate runtime · Rust"]
+        P[Rasterizer<br/>page rendering]
+        L[Document model<br/>structure & objects]
+        R[Parallel scheduler<br/>multi-threaded ops]
+        O[On-device OCR<br/>Apple Vision · system]
     end
 
     A <-->|Tauri IPC| B
@@ -162,10 +161,9 @@ exact same behavior. The frontend talks to whichever transport is available
 | Layer | Technology |
 | --- | --- |
 | Shell | [Tauri v2](https://v2.tauri.app/) (Rust + WebKit / WebView2 / WebKitGTK) |
-| PDF rendering | [PDFium](https://pdfium.googlesource.com/pdfium/) via [`pdfium-render`](https://github.com/ajrcarey/pdfium-render) |
-| PDF structure | [`lopdf`](https://github.com/J-F-Liu/lopdf) |
-| Parallelism | [Rayon](https://github.com/rayon-rs/rayon) |
-| OCR | Apple Vision (macOS) · [Tesseract](https://github.com/tesseract-ocr/tesseract) (fallback) |
+| PDF engine | Slate Engine — homemade Rust core (render · structure · editing) |
+| Parallelism | Multi-threaded Rust (work-stealing scheduler) |
+| OCR | On-device — Apple Vision on macOS |
 | Frontend | Vanilla HTML / CSS / JS (no framework, instant startup) |
 | Office engine (WIP) | Rust ports tracked in [`ONLYOFFICE_PORT.md`](ONLYOFFICE_PORT.md) |
 
@@ -234,7 +232,7 @@ automatically by GitHub Actions on tagged releases.
 - [ ] WebAssembly engine + browser build (Chrome / Firefox / Safari)
 - [ ] Windows & Linux signed releases
 - [ ] Office engine: Word / Sheets / Slides (AGPL port from ONLYOFFICE — in progress)
-- [ ] In-browser OCR (tesseract.js), signing & LLM features
+- [ ] In-browser OCR, signing & LLM features
 
 ---
 

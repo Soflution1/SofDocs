@@ -13,3 +13,15 @@ source reference and AGPL notice.
 ONLYOFFICE trademarks, logos, icons, illustrations, and branded UI assets
 are not licensed for use as Alto branding and must not be copied into this
 repository.
+
+--------------------------------------------------------------------------
+Third-party components
+
+The desktop app is distributed with the following open-source libraries,
+redistributed under their respective licenses:
+
+- PDFium — Copyright The PDFium Authors. BSD 3-Clause License.
+- lopdf  — Copyright the lopdf authors. MIT License.
+
+Full upstream license texts are available in the respective project
+repositories.
